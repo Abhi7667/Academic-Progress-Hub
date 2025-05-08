@@ -22,10 +22,10 @@ def test_timetable():
     print("Test clicked")
 
 def generate_timetable():
-    print("Generate timetable button clicked - attempting to open timetable_display_component.py")
+    print("Generate timetable button clicked - attempting to open timetable_editor_component.py")
     try:
-        # Determine the correct path to timetable_display_component.py within the windows directory
-        script_path = os.path.join(os.path.dirname(__file__), 'timetable_display_component.py')
+        # Determine the correct path to timetable_editor_component.py within the windows directory
+        script_path = os.path.join(os.path.dirname(__file__), 'timetable_editor_component.py')
         
         # Use subprocess.Popen to run the script
         # Using pythonw to avoid console window on Windows if available
@@ -39,23 +39,23 @@ def generate_timetable():
             startupinfo.wShowWindow = subprocess.SW_HIDE
             creation_flags = subprocess.CREATE_NO_WINDOW
 
-        # For timetable display, we want to see its window.
-        # The timetable_display_component.py creates its own Tkinter window.
+        # For timetable editor, we want to see its window.
+        # The timetable_editor_component.py creates its own Tkinter window.
         subprocess.Popen(
             [python_executable, script_path],
             startupinfo=startupinfo,
-            # creationflags=creation_flags # Not needed if timetable_display_component is a GUI app
+            # creationflags=creation_flags # Not needed if timetable_editor_component is a GUI app
         )
         # Optionally, you might want to close or hide the current step3 window
         # root.destroy() # or root.withdraw()
         print(f"Launched {script_path}")
 
     except FileNotFoundError:
-        messagebox.showerror("File Not Found", f"Error: timetable_display_component.py not found at {script_path}")
-        print(f"Error: timetable_display_component.py not found at {script_path}")
+        messagebox.showerror("File Not Found", f"Error: timetable_editor_component.py not found at {script_path}")
+        print(f"Error: timetable_editor_component.py not found at {script_path}")
     except Exception as e:
-        messagebox.showerror("Error", f"Could not open timetable display: {e}")
-        print(f"Error launching timetable_display_component.py: {e}")
+        messagebox.showerror("Error", f"Could not open timetable editor: {e}")
+        print(f"Error launching timetable_editor_component.py: {e}")
 
 def show_help():
     print("Help button clicked")

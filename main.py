@@ -3,15 +3,11 @@ from tkinter import ttk
 from tkinter import messagebox
 import os, sys
 sys.path.insert(0, 'windows/')
-import timetable_stud
-import timetable_fac
 import sqlite3
-from notification_model import NotificationModel
+
 import time
 import threading
 
-notifier = NotificationModel()
-notifier.show_notification("Test", "Test notification!")
 
 def challenge():
     conn = sqlite3.connect(r'files/timetable.db')

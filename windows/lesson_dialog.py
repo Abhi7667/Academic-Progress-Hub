@@ -88,10 +88,39 @@ class LessonDialog(tk.Toplevel):
         lessons_count_combo['values'] = tuple(str(i) for i in range(1, 11)) # Example: 1 to 10
         lessons_count_combo.pack(side=tk.LEFT, padx=(0, 10))
 
+        # Create a frame for the lesson type selector
+        lesson_type_frame = ttk.Frame(lessons_frame)
+        lesson_type_frame.pack(side=tk.LEFT, padx=(0, 10))
+        
+        ttk.Label(lesson_type_frame, text="Lesson Type:").pack(side=tk.TOP, anchor=tk.W)
+        
         self.lesson_type_var = tk.StringVar(value="Single")
-        lesson_type_combo = ttk.Combobox(lessons_frame, textvariable=self.lesson_type_var, width=10, state="readonly")
-        lesson_type_combo['values'] = ("Single", "Double", "Triple")
-        lesson_type_combo.pack(side=tk.LEFT, padx=(0, 10))
+        lesson_type_combo = ttk.Combobox(lesson_type_frame, textvariable=self.lesson_type_var, width=12, state="readonly")
+        lesson_type_combo['values'] = ("Single", "Double", "Triple", "Quad", "Quint", "Hex")
+        lesson_type_combo.pack(side=tk.TOP)
+        
+        # Add a short description label below the combo
+        self.lesson_type_desc = ttk.Label(lesson_type_frame, text="1 period", font=("Consolas", 8))
+        self.lesson_type_desc.pack(side=tk.TOP, anchor=tk.W)
+        
+        # Function to update the description when lesson type changes
+        def update_lesson_type_desc(event=None):
+            lesson_type = self.lesson_type_var.get()
+            periods = {
+                "Single": 1, 
+                "Double": 2, 
+                "Triple": 3, 
+                "Quad": 4, 
+                "Quint": 5, 
+                "Hex": 6
+            }.get(lesson_type, 1)
+            self.lesson_type_desc.config(text=f"{periods} {'period' if periods == 1 else 'periods'}")
+        
+        # Bind the update function to the combobox selection event
+        lesson_type_combo.bind("<<ComboboxSelected>>", update_lesson_type_desc)
+        
+        # Initialize the description label with the default value
+        update_lesson_type_desc()
 
         more_weeks_btn = ttk.Button(lessons_frame, text="More weeks/terms", command=self.manage_weeks_terms)
         more_weeks_btn.pack(side=tk.LEFT, expand=True, anchor=tk.E) # Aligned to the right
@@ -356,6 +385,17 @@ class LessonDialog(tk.Toplevel):
             class_name = self.class_var.get()
             lessons_per_week = int(self.lessons_count_var.get())
             lesson_type = self.lesson_type_var.get()
+            
+            # Map lesson type to number of periods
+            lesson_periods = {
+                "Single": 1, 
+                "Double": 2, 
+                "Triple": 3, 
+                "Quad": 4, 
+                "Quint": 5, 
+                "Hex": 6
+            }.get(lesson_type, 1)
+            
             home_classroom = 1 if self.home_classroom_var.get() else 0
             shared_room = 1 if self.shared_room_var.get() else 0
             teachers_classrooms = 1 if self.teachers_classrooms_var.get() else 0
@@ -378,7 +418,17 @@ class LessonDialog(tk.Toplevel):
                     home_classroom, shared_room, teachers_classrooms, subjects_classrooms
                 ))
                 self.conn.commit()
-                messagebox.showinfo("Success", "Lesson added successfully")
+                
+                # Provide feedback about the lesson configuration
+                messagebox.showinfo(
+                    "Success", 
+                    f"Lesson added successfully:\n\n"
+                    f"• Subject: {subject_code}\n"
+                    f"• Class: {class_name}\n"
+                    f"• Lesson type: {lesson_type} ({lesson_periods} periods)\n"
+                    f"• Lessons per week: {lessons_per_week}"
+                )
+                
                 self.destroy()
             else:
                 messagebox.showerror("Database Error", "No database connection")
@@ -391,7 +441,7 @@ class LessonDialog(tk.Toplevel):
         print(f"Subject: {self.subject_var.get()}")
         print(f"Class: {self.class_var.get()}")
         print(f"Lessons Count: {self.lessons_count_var.get()}")
-        print(f"Lesson Type: {self.lesson_type_var.get()}")
+        print(f"Lesson Type: {self.lesson_type_var.get()} ({lesson_periods} periods)")
         print(f"Home Classroom: {self.home_classroom_var.get()}")
         print(f"Shared Room: {self.shared_room_var.get()}")
         print(f"Teacher's Classrooms: {self.teachers_classrooms_var.get()}")

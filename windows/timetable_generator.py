@@ -215,26 +215,29 @@ class TimetableApp(tk.Tk):
         self.status_label = ttk.Label(self.status_frame, text="", foreground="red")
         self.status_label.pack(anchor="center")
 
-        grid_frame = ttk.Frame(content_frame)
-        grid_frame.pack(expand=True, fill=tk.BOTH)
+        # Create the grid frame
+        self.grid_frame = ttk.Frame(content_frame)
+        self.grid_frame.pack(expand=True, fill=tk.BOTH)
         
         # Empty top-left cell
-        ttk.Label(grid_frame, text="", borderwidth=1, relief="solid", anchor="center").grid(row=0, column=0, sticky="nsew")
+        ttk.Label(self.grid_frame, text="", borderwidth=1, relief="solid", anchor="center").grid(row=0, column=0, sticky="nsew")
 
         # Period headers
         for i, (period_num, time_str) in enumerate(self.periods_info.items()):
             header_text = f"{period_num}\n{time_str}"
-            ttk.Label(grid_frame, text=header_text, borderwidth=1, relief="solid", anchor="center",
+            ttk.Label(self.grid_frame, text=header_text, borderwidth=1, relief="solid", anchor="center",
                       justify="center", font=("Arial", 8, "bold"), padding=3).grid(row=0, column=i+1, sticky="nsew")
 
         # Day headers and lesson cells
         self.cells = {} 
+        self.merged_cells = {}  # Track merged cells
+        
         for r, day in enumerate(self.days):
-            ttk.Label(grid_frame, text=day, borderwidth=1, relief="solid", anchor="center",
+            ttk.Label(self.grid_frame, text=day, borderwidth=1, relief="solid", anchor="center",
                       font=("Arial", 12, "bold"), padding=5).grid(row=r+1, column=0, sticky="nsew")
             for c, period_num in enumerate(self.periods_info.keys()):
                 cell_key = (day, period_num) 
-                cell_frame = ttk.Frame(grid_frame, borderwidth=1, relief="solid")
+                cell_frame = ttk.Frame(self.grid_frame, borderwidth=1, relief="solid")
                 cell_frame.grid(row=r+1, column=c+1, sticky="nsew")
                 cell_frame.grid_rowconfigure(0, weight=1)
                 cell_frame.grid_columnconfigure(0, weight=1)
@@ -242,12 +245,16 @@ class TimetableApp(tk.Tk):
                 cell_label = ttk.Label(cell_frame, text="", anchor="center", justify="center", 
                                        font=("Arial", 9), wraplength=100, padding=2)
                 cell_label.grid(row=0, column=0, sticky="nsew")
-                self.cells[cell_key] = cell_label
+                self.cells[cell_key] = {
+                    'frame': cell_frame,
+                    'label': cell_label,
+                    'merged': False
+                }
         
         for i in range(len(self.days) + 1): 
-            grid_frame.grid_rowconfigure(i, weight=1, minsize=70 if i > 0 else 45) 
+            self.grid_frame.grid_rowconfigure(i, weight=1, minsize=70 if i > 0 else 45) 
         for i in range(len(self.periods_info) + 1): 
-            grid_frame.grid_columnconfigure(i, weight=1, minsize=120 if i > 0 else 70)
+            self.grid_frame.grid_columnconfigure(i, weight=1, minsize=120 if i > 0 else 70)
 
     def _change_section(self):
         """Update timetable when section is changed"""
@@ -310,8 +317,8 @@ class TimetableApp(tk.Tk):
             return []
 
     def _load_and_display_timetable(self):
-        for cell_label in self.cells.values():
-            cell_label.config(text="") # Clear previous data
+        # Reset all cells first
+        self._reset_cells()
 
         try:
             # Clear previous conflict status
@@ -341,8 +348,10 @@ class TimetableApp(tk.Tk):
                                      "\n".join(conflict_msgs[:5]) +
                                      ("\n..." if len(conflict_msgs) > 5 else ""))
 
-            # First try to load data from SCHEDULE table (scheduler.py format)
+            # Collect all schedule data by day
+            timetable_data = {}
             has_schedule_data = False
+            
             try:
                 # Query to get timetable data from SCHEDULE table
                 query = """
@@ -368,13 +377,18 @@ class TimetableApp(tk.Tk):
                         if day_code not in self.days or period_num not in self.periods_info:
                             continue
                             
-                        cell_key = (day_code, period_num)
-                        if cell_key in self.cells:
-                            # Use subject name from SUBJECTS table if available, otherwise use SUBCODE
-                            subject_display = sub_name if sub_name else subcode if subcode != "NULL" else "Free"
-                            faculty_display = fini if fini != "NULL" else "-"
-                            lesson_text = f"{subject_display}\n{faculty_display}"
-                            self.cells[cell_key].config(text=lesson_text)
+                        if day_code not in timetable_data:
+                            timetable_data[day_code] = {}
+                            
+                        # Use subject name from SUBJECTS table if available, otherwise use SUBCODE
+                        subject_display = sub_name if sub_name else subcode if subcode != "NULL" else "Free"
+                        faculty_display = fini if fini != "NULL" else "-"
+                        
+                        timetable_data[day_code][period_num] = {
+                            'subject': subject_display,
+                            'faculty': faculty_display,
+                            'subject_code': subcode
+                        }
             except sqlite3.Error as e:
                 print(f"Error loading SCHEDULE data: {e}")
                 has_schedule_data = False
@@ -382,7 +396,7 @@ class TimetableApp(tk.Tk):
             # If no data from SCHEDULE table, try SCHEDULED_LESSONS
             if not has_schedule_data:
                 query = """
-                SELECT sl.DAY_OF_WEEK, sl.PERIOD_NUMBER, s.SUBNAME, f.INI 
+                SELECT sl.DAY_OF_WEEK, sl.PERIOD_NUMBER, s.SUBNAME, f.INI, sl.SUBJECT_CODE 
                 FROM SCHEDULED_LESSONS sl
                 LEFT JOIN SUBJECTS s ON sl.SUBJECT_CODE = s.SUBCODE
                 LEFT JOIN FACULTY f ON sl.TEACHER_ID = f.FID
@@ -394,22 +408,159 @@ class TimetableApp(tk.Tk):
 
                 if not lessons:
                     print(f"No scheduled lessons found for class: {self.class_name_filter}")
-                    # You could show this message in the UI status bar if you add one
-
-                for lesson_data in lessons:
-                    day_db, period_num, sub_name, teacher_ini = lesson_data
+                else:
+                    for lesson_data in lessons:
+                        day_db, period_num, sub_name, teacher_ini, subject_code = lesson_data
+                        
+                        if day_db not in timetable_data:
+                            timetable_data[day_db] = {}
+                            
+                        subject_display = sub_name or 'N/A'
+                        faculty_display = teacher_ini or 'N/A'
+                        
+                        timetable_data[day_db][period_num] = {
+                            'subject': subject_display,
+                            'faculty': faculty_display,
+                            'subject_code': subject_code
+                        }
+            
+            # Process the timetable data to find consecutive same subjects
+            for day in self.days:
+                if day not in timetable_data:
+                    continue
                     
-                    cell_key = (day_db, period_num) # Assumes DAY_OF_WEEK in DB matches DAYS list
-                    if cell_key in self.cells:
-                        lesson_text = f"{sub_name or 'N/A'}\n{teacher_ini or 'N/A'}"
-                        self.cells[cell_key].config(text=lesson_text)
+                # Find spans of consecutive periods with the same subject
+                spans = []
+                current_span = []
+                last_subject = None
+                
+                for period in sorted(self.periods_info.keys()):
+                    if period in timetable_data[day]:
+                        current_subject = timetable_data[day][period].get('subject_code')
+                        
+                        # Skip if no subject code (free period)
+                        if current_subject in (None, "NULL", ""):
+                            if current_span:
+                                spans.append(current_span)
+                                current_span = []
+                            last_subject = None
+                            continue
+                            
+                        # If same subject as previous period, extend the span
+                        if current_subject == last_subject:
+                            current_span.append(period)
+                        else:
+                            # End previous span if exists
+                            if current_span:
+                                spans.append(current_span)
+                                
+                            # Start new span
+                            current_span = [period]
+                            last_subject = current_subject
                     else:
-                        print(f"Warning: Cell key {cell_key} for day '{day_db}' period {period_num} not found in UI grid.")
+                        # No class this period
+                        if current_span:
+                            spans.append(current_span)
+                            current_span = []
+                        last_subject = None
+                
+                # Add the last span if it exists
+                if current_span:
+                    spans.append(current_span)
+                
+                # Process spans to merge cells where needed
+                for span in spans:
+                    if len(span) > 1:
+                        # Get subject info from the first period
+                        first_period = span[0]
+                        subject_info = timetable_data[day][first_period]
+                        
+                        # Create merged cell
+                        self._merge_cells(day, span, subject_info)
+                    else:
+                        # Single cell, just display normally
+                        period = span[0]
+                        cell_key = (day, period)
+                        subject_info = timetable_data[day][period]
+                        
+                        if cell_key in self.cells and not self.cells[cell_key]['merged']:
+                            lesson_text = f"{subject_info['subject']}\n{subject_info['faculty']}"
+                            self.cells[cell_key]['label'].config(text=lesson_text)
+                            
+                            # Add period information for single cells
+                            lesson_text += f"\nPeriod {period}"
+                            self.cells[cell_key]['label'].config(text=lesson_text)
 
         except sqlite3.Error as e:
             messagebox.showerror("Database Query Error", f"Failed to load timetable data: {e}", parent=self)
         except Exception as ex:
             messagebox.showerror("Unexpected Error", f"An error occurred while loading timetable: {ex}", parent=self)
+    
+    def _reset_cells(self):
+        """Reset all cells to their original state"""
+        # Remove any merged cells
+        for merged_key in list(self.merged_cells.keys()):
+            if self.merged_cells[merged_key]:
+                self.merged_cells[merged_key].destroy()
+            del self.merged_cells[merged_key]
+            
+        # Reset all original cells
+        for cell_key, cell_data in self.cells.items():
+            # Only restore if this cell was hidden
+            if cell_data['merged']:
+                day, period = cell_key
+                row_idx = self.days.index(day) + 1
+                col_idx = list(self.periods_info.keys()).index(period) + 1
+                
+                cell_data['frame'].grid(row=row_idx, column=col_idx, sticky="nsew")
+                cell_data['merged'] = False
+            
+            # Clear the text
+            cell_data['label'].config(text="")
+    
+    def _merge_cells(self, day, periods, subject_info):
+        """Create a merged cell spanning multiple periods"""
+        if not periods:
+            return
+            
+        # Get row and column indices
+        row_idx = self.days.index(day) + 1
+        start_col = list(self.periods_info.keys()).index(periods[0]) + 1
+        end_col = list(self.periods_info.keys()).index(periods[-1]) + 1
+        
+        # Hide individual cells
+        for period in periods:
+            cell_key = (day, period)
+            if cell_key in self.cells:
+                self.cells[cell_key]['frame'].grid_remove()
+                self.cells[cell_key]['merged'] = True
+        
+        # Create merged cell frame
+        merged_key = (day, tuple(periods))
+        merged_frame = ttk.Frame(self.grid_frame, borderwidth=1, relief="solid")
+        merged_frame.grid(row=row_idx, column=start_col, columnspan=end_col-start_col+1, sticky="nsew")
+        
+        # Style for merged cells
+        style = ttk.Style()
+        style.configure("Merged.TLabel", background="#f0f0f0", font=("Arial", 10, "bold"))
+        
+        # Add label with subject information
+        period_range = f"Periods {periods[0]}-{periods[-1]}" if len(periods) > 1 else f"Period {periods[0]}"
+        merged_text = f"{subject_info['subject']}\n{subject_info['faculty']}\n{period_range}"
+        
+        merged_label = ttk.Label(
+            merged_frame, 
+            text=merged_text, 
+            anchor="center", 
+            justify="center",
+            style="Merged.TLabel",
+            padding=5,
+            wraplength=150
+        )
+        merged_label.pack(expand=True, fill=tk.BOTH)
+        
+        # Store the merged cell reference
+        self.merged_cells[merged_key] = merged_frame
 
     def _on_closing(self):
         if self.conn:
